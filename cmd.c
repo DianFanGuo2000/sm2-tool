@@ -227,6 +227,8 @@ int verify(char *file_path) {
     munmap(buf, filesize(file_path)); // filesize 需要你根据实际情况定义，或者使用其他方式获取文件大小
     return 0;
 }
+
+
 /**
  * Writes the provided data to a file with the specified file name.
  *
@@ -249,6 +251,7 @@ int verify(char *file_path) {
 void download(const uint8_t *data, uint32_t length, const char *fileName) {
     // Open the file in binary write mode
     FILE *file = fopen(fileName, "wb");
+    printf("Openning %s\n",fileName);
     if (file == NULL) {
         // If the file cannot be opened, print an error message and return
         perror("Error opening file");
@@ -262,8 +265,49 @@ void download(const uint8_t *data, uint32_t length, const char *fileName) {
         perror("Error writing to file");
     }
 
+    printf("Dowloaded %s\n",fileName);
+
     // Close the file
     fclose(file);
+}
+
+
+
+/**
+ * Function to get the full path of a target file in the same directory as the given file path.
+ * 
+ * @param file_path The path to the current file, which will be used to determine the directory.
+ * @param target_file_name The name of the target file for which the full path is to be found.
+ * @return A pointer to a static character array containing the full path to the target file.
+ * 
+ * Example of usage:
+ * const char currentFilePath[] = "/home/user/documents/example.txt";
+ * const char targetFileName[] = "targetFile.txt";
+ * char* targetFilePath = getFilePathAtSameDir(currentFilePath, targetFileName);
+ * printf("The full path to the target file is: %s\n", targetFilePath);
+ * 
+ * Note: The function uses a static array to store the result, so each call will overwrite the previous result.
+ * Also, the function assumes that the file paths are correctly formatted and does not handle errors.
+ */
+char* getFilePathAtSameDir(const char* file_path, const char* target_file_name) {
+    static char fullPath[1024] = {0};  // Use a static array to return the result
+    strcpy(fullPath, file_path);  // Copy the file path to the static array
+
+    // Find the last slash in the path
+    char *lastSlash = strrchr(fullPath, '/');
+    if (lastSlash != NULL) {
+        *lastSlash = '\0';  // Remove the file name, keeping only the directory path
+    } else {
+        // If there is no slash, assume the file is in the current directory
+        fullPath[0] = '.';  // Represent the current directory
+        fullPath[1] = '\0';  // Null-terminate the string
+        fullPath[strlen(file_path)] = '$';
+    }
+
+    strcat(fullPath, "/");  // Add a separator
+    strcat(fullPath, target_file_name);  // Append the target file name
+
+    return fullPath;  // Return the full path to the target file
 }
 
 
@@ -307,7 +351,7 @@ int split(char *file_path) {
     pfilehead = (FileInfo *)(buf + CODE_HEAD_LENGTH + sizeof(uint32_t));
     printf("filenum is %d \n", filenum);
 
-
+    int fsize = filesize(file_path);
     // Iterate through all the files based on the file number
     for (int i = 0; i < filenum; i++) {
         printf("pfilehead's offset in file is 0x%x \n", (uint8_t *)pfilehead - buf);
@@ -320,20 +364,19 @@ int split(char *file_path) {
         }
         printf("\n");
 
-        // Concatenate the file path with the directory path to form the full path
-        char fullPath[1024] = {0};
-        strcat(fullPath, file_path);
-        char *lastSlash = strrchr(fullPath, '/');
-        if (lastSlash != NULL) {
-            *lastSlash = '\0'; // Remove the file name and keep the directory path
+        if(pfilehead->fileOffset<0 || pfilehead->fileOffset>fsize || pfilehead->fileOffset<0 || pfilehead->fileOffset + pfilehead->fileOffset > fsize)
+        {
+            printf("visit cross file limit at downloading %s, maybe your file meet a damage here, we refuse to download this file\n",pfilehead->fileName);
+        }else{
+            download((uint8_t *)(buf + pfilehead->fileOffset), pfilehead->fileLength, getFilePathAtSameDir(file_path,pfilehead->fileName));
         }
-        strcat(fullPath, "/");
-        strcat(fullPath, pfilehead->fileName);
 
-        download((uint8_t *)(buf + pfilehead->fileOffset), pfilehead->fileLength, fullPath);
-
+        
         pfilehead = (FileInfo *)((uint8_t *)pfilehead + sizeof(FileInfo));
+
     }
+
+    munmap(buf, fsize); // filesize 需要你根据实际情况定义，或者使用其他方式获取文件大小
     return 0;
 }
 
